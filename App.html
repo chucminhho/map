@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Search App with Navigation</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+
+        .container {
+            max-width: 960px; /* Slightly wider for new column */
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .file-upload-section, .search-section {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input[type="file"],
+        input[type="text"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            display: inline-block;
+            background: #5cb85c;
+            color: #fff;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        button:hover {
+            background: #4cae4c;
+        }
+
+        #fileInfo {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        #resultsArea {
+            margin-top: 20px;
+        }
+
+        #statusMessage {
+            text-align: center;
+            color: #777;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            word-wrap: break-word; /* Help prevent overly wide cells */
+        }
+
+        th {
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        tbody tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .navigate-button {
+            display: inline-block;
+            padding: 6px 12px;
+            background-color: #007bff;
+            color: white !important; /* Override default link color */
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9em;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+        }
+        .navigate-button:hover {
+            background-color: #0056b3;
+            color: white !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CSV Data Search with Navigation</h1>
+
+        <div class="controls">
+            <div class="file-upload-section">
+                <label for="csvFile">Upload CSV File:</label>
+                <input type="file" id="csvFile" accept=".csv">
+                <p id="fileInfo"></p>
+            </div>
+
+            <div class="search-section">
+                <label for="searchTerm">Search Keyword:</label>
+                <input type="text" id="searchTerm" placeholder="Enter keyword...">
+                <button id="searchButton">Search</button>
+            </div>
+        </div>
+
+        <div id="resultsArea">
+            <p id="statusMessage">Please upload a CSV file and enter a search term.</p>
+            <table id="resultsTable" style="display: none;">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const csvFileInput = document.getElementById('csvFile');
+            const searchTermInput = document.getElementById('searchTerm');
+            const searchButton = document.getElementById('searchButton');
+            const resultsTable = document.getElementById('resultsTable');
+            const tableHead = resultsTable.querySelector('thead');
+            const tableBody = resultsTable.querySelector('tbody');
+            const statusMessage = document.getElementById('statusMessage');
+            const fileInfo = document.getElementById('fileInfo');
+
+            let parsedData = [];
+            let headers = [];
+            let latHeaderName = ''; // Store discovered Latitude header name
+            let lonHeaderName = ''; // Store discovered Longitude header name
+
+            csvFileInput.addEventListener('change', handleFileUpload);
+            searchButton.addEventListener('click', performSearch);
+            searchTermInput.addEventListener('keypress', function(event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    performSearch();
+                }
+            });
+
+            function handleFileUpload(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    fileInfo.textContent = `File selected: ${file.name}`;
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const text = e.target.result;
+                        parseCSV(text);
+                        statusMessage.textContent = "CSV file loaded. Enter a keyword to search.";
+                        clearTable();
+                    };
+                    reader.onerror = function() {
+                        statusMessage.textContent = "Error reading file.";
+                        fileInfo.textContent = "";
+                        parsedData = [];
+                        headers = [];
+                        latHeaderName = '';
+                        lonHeaderName = '';
+                    }
+                    reader.readAsText(file);
+                } else {
+                    fileInfo.textContent = "";
+                    statusMessage.textContent = "No file selected.";
+                    parsedData = [];
+                    headers = [];
+                    latHeaderName = '';
+                    lonHeaderName = '';
+                    clearTable();
+                }
+            }
+
+            function parseCSV(csvText) {
+                parsedData = [];
+                headers = [];
+                latHeaderName = '';
+                lonHeaderName = '';
+
+                const lines = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+                if (lines.length > 0) {
+                    headers = lines[0].split(',').map(header => header.trim());
+
+                    // Find Latitude and Longitude header names (case-insensitive)
+                    latHeaderName = headers.find(h => ['latitude', 'lat'].includes(h.toLowerCase()));
+                    lonHeaderName = headers.find(h => ['longitude', 'lon', 'lng'].includes(h.toLowerCase()));
+
+                    for (let i = 1; i < lines.length; i++) {
+                        if (lines[i].trim() === '') continue;
+                        const values = lines[i].split(','); // Basic split, no quote handling
+                        let rowObject = {};
+                        headers.forEach((header, index) => {
+                            rowObject[header] = values[index] ? values[index].trim() : "";
+                        });
+                        parsedData.push(rowObject);
+                    }
+                }
+            }
+
+            function performSearch() {
+                const searchTerm = searchTermInput.value.trim().toLowerCase();
+                // Do not clear the table here, displayResults will handle it
+                // clearTable();
+
+                if (!parsedData.length) {
+                    statusMessage.textContent = "Please upload a CSV file first.";
+                    resultsTable.style.display = 'none';
+                    tableHead.innerHTML = ''; // Ensure headers are cleared
+                    tableBody.innerHTML = ''; // Ensure body is cleared
+                    return;
+                }
+
+                if (!searchTerm) {
+                    statusMessage.textContent = "Displaying all data (no search term).";
+                    displayResults(parsedData); // Display all data if no search term
+                    return;
+                }
+
+                const results = parsedData.filter(row => {
+                    return headers.some(header => {
+                        const value = row[header];
+                        return value && String(value).toLowerCase().includes(searchTerm);
+                    });
+                });
+
+                displayResults(results);
+            }
+
+            function displayResults(results) {
+                tableHead.innerHTML = '';
+                tableBody.innerHTML = '';
+
+                if (headers.length > 0) {
+                    const headerRow = document.createElement('tr');
+                    headers.forEach(headerText => {
+                        const th = document.createElement('th');
+                        th.textContent = headerText;
+                        headerRow.appendChild(th);
+                    });
+                    // Add an extra header for the Navigate button if lat/lon headers were found
+                    if (latHeaderName && lonHeaderName) {
+                        const thNavigate = document.createElement('th');
+                        thNavigate.textContent = "Navigate";
+                        headerRow.appendChild(thNavigate);
+                    }
+                    tableHead.appendChild(headerRow);
+                }
+
+                if (results.length > 0) {
+                    results.forEach(rowObject => {
+                        const tr = document.createElement('tr');
+                        headers.forEach(header => {
+                            const td = document.createElement('td');
+                            td.textContent = rowObject[header] || "";
+                            tr.appendChild(td);
+                        });
+
+                        // Add navigation cell if lat/lon headers and values are present
+                        if (latHeaderName && lonHeaderName) {
+                            const tdNavigate = document.createElement('td');
+                            const latValue = rowObject[latHeaderName];
+                            const lonValue = rowObject[lonHeaderName];
+
+                            if (latValue && lonValue && !isNaN(parseFloat(latValue)) && !isNaN(parseFloat(lonValue))) {
+                                const navigateLink = document.createElement('a');
+                                navigateLink.href = `https://www.google.com/maps?q=${parseFloat(latValue)},${parseFloat(lonValue)}`;
+                                navigateLink.textContent = "Navigate";
+                                navigateLink.target = "_blank"; // Open in new tab
+                                navigateLink.classList.add('navigate-button');
+                                tdNavigate.appendChild(navigateLink);
+                            } else {
+                                tdNavigate.textContent = "N/A"; // Or leave empty: ""
+                            }
+                            tr.appendChild(tdNavigate);
+                        }
+                        tableBody.appendChild(tr);
+                    });
+                    if (searchTermInput.value.trim() === '' && parsedData.length > 0) {
+                         statusMessage.textContent = `Displaying all ${results.length} rows.`;
+                    } else {
+                        statusMessage.textContent = `Found ${results.length} matching row(s).`;
+                    }
+                    resultsTable.style.display = 'table';
+                } else {
+                    if (searchTermInput.value.trim() === '' && parsedData.length === 0) {
+                        statusMessage.textContent = "Please upload a CSV file.";
+                    } else if (searchTermInput.value.trim() === '' && parsedData.length > 0) {
+                         statusMessage.textContent = `Displaying all ${parsedData.length} rows.`;
+                         displayResults(parsedData); // Should not happen if logic above is correct, but as a fallback
+                         return; // prevent hiding table
+                    }
+                    else {
+                        statusMessage.textContent = "No results found for your search term.";
+                    }
+                    resultsTable.style.display = 'none';
+                }
+            }
+
+            function clearTable() {
+                tableHead.innerHTML = '';
+                tableBody.innerHTML = '';
+                resultsTable.style.display = 'none';
+                // Preserve status message if it's informative, or reset it:
+                // statusMessage.textContent = "Please upload a CSV file and enter a search term.";
+            }
+        });
+    </script>
+</body>
+</html>

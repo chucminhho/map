@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Current Location</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .location-container {
+            margin-bottom: 15px;
+        }
+        .input-group {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .input-group label {
+            margin-right: 10px;
+            min-width: 120px;
+        }
+        input[type="text"] {
+            width: 220px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #currentLocationInput {
+            width: 350px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-top: 15px;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        button:not(:disabled):hover {
+            background-color: #45a049;
+        }
+        .tooltip {
+            visibility: hidden;
+            min-width: 150px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: fixed;
+            z-index: 100;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .tooltip.show {
+            visibility: visible;
+            opacity: 1;
+        }
+        #status {
+            font-style: italic;
+            color: #555;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Current Location</h1>
+
+    <div id="status">Fetching location... Please allow location access if prompted.</div>
+
+    <div class="location-container">
+        <p id="coordinatesText">Latitude: -, Longitude: -</p>
+    </div>
+
+    <div class="input-group">
+        <label for="currentLocationInput">Current location:</label>
+        <input type="text" id="currentLocationInput" readonly placeholder="Latitude, Longitude will appear here">
+    </div>
+
+    <div class="input-group">
+        <label for="latitudeInput">Latitude:</label>
+        <input type="text" id="latitudeInput" readonly placeholder="Latitude will appear here">
+    </div>
+
+    <div class="input-group">
+        <label for="longitudeInput">Longitude:</label>
+        <input type="text" id="longitudeInput" readonly placeholder="Longitude will appear here">
+    </div>
+
+    <button id="googleMapsButton" disabled>Google Maps</button>
+
+    <div id="tooltip" class="tooltip"></div>
+
+    <script>
+        const statusElement = document.getElementById('status');
+        const coordinatesTextElement = document.getElementById('coordinatesText');
+        const latitudeInputElement = document.getElementById('latitudeInput');
+        const longitudeInputElement = document.getElementById('longitudeInput');
+        const currentLocationInputElement = document.getElementById('currentLocationInput');
+        const googleMapsButton = document.getElementById('googleMapsButton'); // New button
+        const tooltipElement = document.getElementById('tooltip');
+        let tooltipTimeout;
+
+        // Store fetched coordinates globally for the button
+        let currentLat = null;
+        let currentLon = null;
+
+        function showTooltip(message) {
+            tooltipElement.textContent = message;
+            tooltipElement.classList.add('show');
+            clearTimeout(tooltipTimeout);
+            tooltipTimeout = setTimeout(() => {
+                tooltipElement.classList.remove('show');
+            }, 2000);
+        }
+
+        async function copyToClipboard(textToCopy, typeName, inputElement) {
+            if (!textToCopy || (inputElement && textToCopy === inputElement.placeholder)) {
+                showTooltip(`No ${typeName} data to copy yet.`);
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(textToCopy);
+                showTooltip(`${typeName} is copied!`);
+            } catch (err) {
+                console.error(`Failed to copy ${typeName}: `, err);
+                showTooltip(`Failed to copy ${typeName}. See console.`);
+            }
+        }
+
+        currentLocationInputElement.addEventListener('click', () => {
+            copyToClipboard(currentLocationInputElement.value, 'Current Location', currentLocationInputElement);
+        });
+
+        latitudeInputElement.addEventListener('click', () => {
+            copyToClipboard(latitudeInputElement.value, 'Latitude', latitudeInputElement);
+        });
+
+        longitudeInputElement.addEventListener('click', () => {
+            copyToClipboard(longitudeInputElement.value, 'Longitude', longitudeInputElement);
+        });
+
+        googleMapsButton.addEventListener('click', () => {
+            if (currentLat !== null && currentLon !== null) {
+                const mapsUrl = `https://www.google.com/maps?q=${currentLat},${currentLon}`;
+                // const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${currentLat},${currentLon}`; // Alternative
+                window.open(mapsUrl, '_blank'); // Open in a new tab
+            } else {
+                showTooltip("Location data not available yet.");
+            }
+        });
+
+        window.onload = () => {
+            googleMapsButton.disabled = true; // Ensure it's disabled on load
+            if (navigator.geolocation) {
+                statusElement.textContent = "Attempting to fetch location...";
+                navigator.geolocation.getCurrentPosition(showPosition, showError, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            } else {
+                const msg = "Geolocation is not supported by this browser.";
+                statusElement.textContent = msg;
+                coordinatesTextElement.textContent = msg;
+                latitudeInputElement.placeholder = msg;
+                longitudeInputElement.placeholder = msg;
+                currentLocationInputElement.placeholder = msg;
+                googleMapsButton.disabled = true;
+            }
+        };
+
+        function showPosition(position) {
+            currentLat = position.coords.latitude; // Store globally
+            currentLon = position.coords.longitude; // Store globally
+
+            statusElement.textContent = "Location fetched successfully!";
+            coordinatesTextElement.textContent = `Latitude: ${currentLat}, Longitude: ${currentLon}`;
+
+            latitudeInputElement.value = currentLat;
+            longitudeInputElement.value = currentLon;
+            currentLocationInputElement.value = `${currentLat}, ${currentLon}`;
+
+            googleMapsButton.disabled = false; // Enable the button
+        }
+
+        function showError(error) {
+            currentLat = null;
+            currentLon = null;
+            let message = "Error: ";
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    message += "User denied the request for Geolocation.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    message += "Location information is unavailable.";
+                    break;
+                case error.TIMEOUT:
+                    message += "The request to get user location timed out.";
+                    break;
+                case error.UNKNOWN_ERROR:
+                    message += "An unknown error occurred.";
+                    break;
+            }
+            statusElement.textContent = message;
+            coordinatesTextElement.textContent = message;
+            latitudeInputElement.placeholder = "Error fetching";
+            longitudeInputElement.placeholder = "Error fetching";
+            currentLocationInputElement.placeholder = "Error fetching";
+            googleMapsButton.disabled = true; // Keep button disabled
+            console.error("Geolocation error: ", error);
+        }
+    </script>
+
+</body>
+</html>
